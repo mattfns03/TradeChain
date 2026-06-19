@@ -1,41 +1,69 @@
-Trade Structure
+# Smart Contract Specification
 
-struct Trade {
-    uint256 tradeId;
-    address importer;
-    address exporter;
-    uint256 amount;
-    uint256 createdAt;
-    uint256 deadline;
-    TradeStatus status;
-}
+# Contract 1: TradeManager
 
-Trade Status Enum
+Responsible for managing trade agreements.
 
-enum TradeStatus {
-    Created,
-    Accepted,
-    Funded,
-    Shipped,
-    Completed,
-    Cancelled
-}
+# Functions
 
-Contract : TradeManager
-Functions -> createTrade()
-             acceptTrade()
-             getTrade()
-For: 
-Create Trade
-Accept Trade
-Update Status
-View Trade
+createTrade()
+acceptTrade()
+cancelTrade()
+getTrade()
 
-Contract : Escrow
-Functions -> deposit()
-             releaseFunds()
-             refund()
-For:
-Deposit Funds
-Release Funds
-Refund
+# Trade Status
+
+Created
+Accepted
+Funded
+Shipped
+Completed
+Cancelled
+
+# Trade Structure
+
+Trade:
+
+* tradeId
+* importer
+* exporter
+* amount
+* createdAt
+* deadline
+* status
+
+---
+
+# Contract 2: Escrow
+
+Responsible for holding and releasing funds.
+
+# Functions
+
+deposit()
+releaseFunds()
+refund()
+
+# Escrow Rules
+
+* Importer funds escrow
+* Funds remain locked
+* Oracle confirms shipment
+* Funds released to exporter
+* Refund possible before shipment
+
+---
+
+# Future Contracts
+
+# Identity Contract
+
+DID registration and verification
+
+# DAO Contract
+
+Dispute resolution voting
+
+# Cross-Chain Settlement Contract
+
+Multi-chain trade settlement
