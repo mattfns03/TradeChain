@@ -7,6 +7,15 @@ import "../interfaces/ITradeManager.sol";
 
 contract TradeManager is Ownable, ReentrancyGuard, ITradeManager {
 
+    // ------------------------------ Errors --------------------------------------
+
+    error TradeNotFound();
+    error InvalidExporter();
+    error InvalidAmount();
+    error InvalidDeadline();
+    error Unauthorized();
+    error InvalidTradeState();
+
     uint256 private tradeCounter;
 
     mapping(uint256 => Trade) private trades;
@@ -27,7 +36,9 @@ contract TradeManager is Ownable, ReentrancyGuard, ITradeManager {
     );
 
     modifier tradeExists(uint256 tradeId) {
-        require(tradeId < tradeCounter, "Trade does not exist");
+        if (tradeId >= tradeCounter) {
+            revert TradeNotFound();
+        }
         _;
     }
 
@@ -39,10 +50,8 @@ contract TradeManager is Ownable, ReentrancyGuard, ITradeManager {
         uint256 deadline,
         bytes32 documentHash
     ) external nonReentrant {
-        require(exporter != address(0), "Invalid exporter");
-        require(exporter != msg.sender, "Importer and exporter cannot be match");
-        require(amount > 0, "Amount must be greater than 0");
-        require(deadline > block.timestamp, "Invalid Deadline");
+
+        _validateTradeCreation(exporter, amount, deadline);
 
         trades[tradeCounter] = Trade({
             tradeId: tradeCounter,
@@ -68,8 +77,8 @@ contract TradeManager is Ownable, ReentrancyGuard, ITradeManager {
     function acceptTrade(uint256 tradeId) external tradeExists(tradeId) {
         Trade storage trade = trades[tradeId];
 
-        require(msg.sender == trade.exporter, "Only exporter allowed");
-        require(trade.status == TradeStatus.Created, "Trade cannot be accepted");
+        if (msg.sender != trade.exporter) { revert Unauthorized(); }
+        _validateTradeState(trade, TradeStatus.Created);
         trade.status = TradeStatus.Accepted;
         emit TradeAccepted(tradeId);
     }
@@ -77,8 +86,8 @@ contract TradeManager is Ownable, ReentrancyGuard, ITradeManager {
     function cancelTrade(uint256 tradeId) external tradeExists(tradeId) {
         Trade storage trade = trades[tradeId];
 
-        require(msg.sender == trade.importer, "Only importer allowed");
-        require(trade.status == TradeStatus.Created, "Trade cannot be cancelled");
+        if (msg.sender != trade.importer) { revert Unauthorized(); }
+        _validateTradeState(trade, TradeStatus.Created);
 
         trade.status = TradeStatus.Cancelled;
         emit TradeCancelled(tradeId);
@@ -92,4 +101,23 @@ contract TradeManager is Ownable, ReentrancyGuard, ITradeManager {
         return tradeCounter;
     }
 
+    function _validateTradeCreation(
+        address exporter,
+        uint256 amount,
+        uint256 deadline
+    ) internal view {
+        if (exporter == address(0)) { revert InvalidExporter(); }
+        if (exporter == msg.sender) { revert InvalidExporter(); }
+        if (amount <= 0) { revert InvalidAmount(); }
+        if (deadline <= block.timestamp) { revert InvalidDeadline(); }
+    }
+
+    function _validateTradeState(
+        Trade storage trade,
+        TradeStatus expected
+    ) internal view {
+        if (trade.status != expected) {
+            revert InvalidTradeState();
+        }
+    }
 }
