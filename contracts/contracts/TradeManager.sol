@@ -13,10 +13,13 @@ contract TradeManager is Ownable, ReentrancyGuard, ITradeManager {
     error InvalidExporter();
     error InvalidAmount();
     error InvalidDeadline();
+    error InvalidAddress();
     error Unauthorized();
     error InvalidTradeState();
 
     uint256 private tradeCounter;
+    address public escrowContract;
+    address public oracleContract;
 
     mapping(uint256 => Trade) private trades;
 
@@ -42,7 +45,46 @@ contract TradeManager is Ownable, ReentrancyGuard, ITradeManager {
         _;
     }
 
+    modifier onlyEscrow() {
+        if (msg.sender != escrowContract) {
+            revert Unauthorized();
+        }
+        _;
+    }
+
+    modifier onlyOracle() {
+        if (msg.sender != oracleContract) {
+            revert Unauthorized();
+        }
+        _;
+    }
+
     constructor(address initialOwner) Ownable(initialOwner) {}
+
+    function _updateTradeState(
+        uint256 tradeId,
+        TradeStatus newStatus
+    ) internal {
+        trades[tradeId].status = newStatus;
+    }
+
+    function markTradeFunded(
+        uint256 tradeId
+    ) external onlyEscrow tradeExists(tradeId) {
+        _updateTradeState(tradeId, TradeStatus.Funded);
+    }
+
+    function markTradeCompleted(
+        uint256 tradeId
+    ) external onlyEscrow tradeExists(tradeId) {
+        _updateTradeState(tradeId, TradeStatus.Completed);
+    }
+
+    function markTradeDisputed(
+        uint256 tradeId
+    ) external onlyOracle tradeExists(tradeId) {
+        _updateTradeState(tradeId, TradeStatus.Disputed);
+    }
 
     function createTrade(
         address exporter,
@@ -101,14 +143,28 @@ contract TradeManager is Ownable, ReentrancyGuard, ITradeManager {
         return tradeCounter;
     }
 
+    function setEscrowContract(address escrow) external onlyOwner {
+        if(escrow == address(0)) {
+            revert InvalidAddress();
+        }
+        escrowContract = escrow;
+    }
+
+    function setOracleContract(address oracle) external onlyOwner {
+        if(oracle == address(0)) {
+            revert InvalidAddress();
+        }
+        oracleContract = oracle;
+    }
+
     function _validateTradeCreation(
         address exporter,
         uint256 amount,
         uint256 deadline
     ) internal view {
-        if (exporter == address(0)) { revert InvalidExporter(); }
-        if (exporter == msg.sender) { revert InvalidExporter(); }
-        if (amount <= 0) { revert InvalidAmount(); }
+        if (exporter == address(0)) { revert InvalidAddress(); }
+        if (exporter == msg.sender) { revert InvalidAddress(); }
+        if (amount == 0) { revert InvalidAmount(); }
         if (deadline <= block.timestamp) { revert InvalidDeadline(); }
     }
 
