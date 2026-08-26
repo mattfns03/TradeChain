@@ -30,6 +30,12 @@ contract TradeManager is Ownable, ReentrancyGuard, ITradeManager {
         uint256 amount
         );
 
+    event TradeStatusUpdated(
+        uint256 indexed tradeId,
+        TradeStatus previousStatus,
+        TradeStatus newStatus
+    );
+
     event TradeAccepted (
         uint256 indexed tradeId
     );
@@ -65,6 +71,37 @@ contract TradeManager is Ownable, ReentrancyGuard, ITradeManager {
         uint256 tradeId,
         TradeStatus newStatus
     ) internal {
+        TradeStatus currentStatus = trades[tradeId].status;
+
+        if( currentStatus == TradeStatus.Created && 
+            newStatus != TradeStatus.Accepted &&
+            newStatus != TradeStatus.Cancelled) {
+                revert InvalidTradeState();
+            }
+        
+        if ( currentStatus == TradeStatus.Accepted &&
+            newStatus != TradeStatus.Funded) {
+                revert InvalidTradeState();
+            }
+
+        if ( currentStatus == TradeStatus.Funded &&
+            newStatus != TradeStatus.Shipped &&
+            newStatus != TradeStatus.Disputed) {
+                revert InvalidTradeState();
+            }
+
+        if( currentStatus == TradeStatus.Shipped &&
+            newStatus != TradeStatus.Completed) {
+                revert InvalidTradeState();
+            }
+
+        if( currentStatus == TradeStatus.Completed || 
+            currentStatus == TradeStatus.Cancelled) {
+                revert InvalidTradeState();
+            }
+
+        emit TradeStatusUpdated(tradeId, currentStatus, newStatus);
+
         trades[tradeId].status = newStatus;
     }
 
@@ -84,6 +121,10 @@ contract TradeManager is Ownable, ReentrancyGuard, ITradeManager {
         uint256 tradeId
     ) external onlyOracle tradeExists(tradeId) {
         _updateTradeState(tradeId, TradeStatus.Disputed);
+    }
+
+    function markTradeShipped( uint256 tradeId) external onlyOracle tradeExists(tradeId) {
+        _updateTradeState(tradeId, TradeStatus.Shipped);
     }
 
     function createTrade(
@@ -121,7 +162,7 @@ contract TradeManager is Ownable, ReentrancyGuard, ITradeManager {
 
         if (msg.sender != trade.exporter) { revert Unauthorized(); }
         _validateTradeState(trade, TradeStatus.Created);
-        trade.status = TradeStatus.Accepted;
+        _updateTradeState(tradeId, TradeStatus.Accepted);
         emit TradeAccepted(tradeId);
     }
 
@@ -130,8 +171,7 @@ contract TradeManager is Ownable, ReentrancyGuard, ITradeManager {
 
         if (msg.sender != trade.importer) { revert Unauthorized(); }
         _validateTradeState(trade, TradeStatus.Created);
-
-        trade.status = TradeStatus.Cancelled;
+        _updateTradeState(tradeId, TradeStatus.Cancelled);
         emit TradeCancelled(tradeId);
     }
 
