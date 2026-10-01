@@ -94,7 +94,7 @@ describe("TradeManager", function() {
             const deadline = Math.floor(Date.now() / 1000) + 3600;
             const documentHash = ethers.keccak256(ethers.toUtf8Bytes("invoice"));
             await expect(tradeManager.connect(importer).createTrade(ethers.ZeroAddress, amount, deadline, documentHash))
-            .to.be.revertedWithCustomError(tradeManager, "InvalidAddress");
+            .to.be.revertedWithCustomError(tradeManager, "InvalidExporter");
         });
 
         it("Should reject importer and exporter being the same address", async function() {
@@ -103,7 +103,7 @@ describe("TradeManager", function() {
             const deadline = Math.floor(Date.now() / 1000) + 3600;
             const documentHash = ethers.keccak256(ethers.toUtf8Bytes("invoice"));
             await expect(tradeManager.connect(importer).createTrade(importer.address, amount, deadline, documentHash))
-            .to.be.revertedWithCustomError(tradeManager, "InvalidAddress");
+            .to.be.revertedWithCustomError(tradeManager, "InvalidExporter");
         });
 
         it("Should reject zero amount trade", async function() {
@@ -400,10 +400,11 @@ describe("TradeManager", function() {
 
         it("Should reject Cancelled -> any further state", async function() {
             const {tradeManager, owner, importer, exporter, escrow, ethers} = await deployTradeManager();
+            await tradeManager.connect(owner).setEscrowContract(escrow.address);
             await createTrade(tradeManager, importer, exporter, ethers);
             await tradeManager.connect(importer).cancelTrade(0);
             await expect(tradeManager.connect(escrow).markTradeFunded(0))
-            .to.be.revertedWithCustomError(tradeManager, "Unauthorized");
+            .to.be.revertedWithCustomError(tradeManager, "InvalidTradeState");
         });
     });
 
@@ -423,6 +424,121 @@ describe("TradeManager", function() {
             const {tradeManager} = await deployTradeManager();
             await expect(tradeManager.getTrade(999))
             .to.be.revertedWithCustomError(tradeManager, "TradeNotFound");
+        });
+    });
+
+    // DISPUTE RESOLUTION --------------------------------------
+
+    describe("Dispute Resolution", function() {
+        it("Should allow an oracle to dispute a funded trade", async function() {
+            const {tradeManager, owner, importer, exporter, oracle, escrow, ethers} = await deployTradeManager();
+            await tradeManager.connect(owner).setEscrowContract(escrow.address);
+            await tradeManager.connect(owner).setOracleContract(oracle.address);
+            await createTrade(tradeManager, importer, exporter, ethers);
+            await tradeManager.connect(exporter).acceptTrade(0);
+            await tradeManager.connect(escrow).markTradeFunded(0);
+            await expect(tradeManager.connect(oracle).markTradeDisputed(0))
+            .to.emit(tradeManager, "TradeStatusUpdated")
+            .withArgs(0n,2n, 6n);
+
+            const trade = await tradeManager.getTrade(0);
+            // Disputed = 6
+            expect(trade.status).to.equal(6n);
+        });
+
+        it("Should allow escrow to resolve a dispute in favor of the exporter", async function(){
+            const {tradeManager, owner, importer, exporter, oracle, escrow, ethers} = await deployTradeManager();
+            await tradeManager.connect(owner).setEscrowContract(escrow.address);
+            await tradeManager.connect(owner).setOracleContract(oracle.address);
+            await createTrade(tradeManager, importer, exporter, ethers);
+            await tradeManager.connect(exporter).acceptTrade(0);
+            await tradeManager.connect(escrow).markTradeFunded(0);
+            await tradeManager.connect(oracle).markTradeDisputed(0);
+            await expect(tradeManager.connect(escrow).markTradeCompleted(0))
+            .to.emit(tradeManager, "TradeStatusUpdated")
+            .withArgs(0n,6n, 4n);
+
+            const trade = await tradeManager.getTrade(0);
+            //Completed = 4
+            expect(trade.status).to.equal(4n);
+        });
+
+        it("Should allow escrow to refund a disputed trade", async function() {
+            const {tradeManager, owner, importer, exporter, oracle, escrow, ethers} = await deployTradeManager();
+            await tradeManager.connect(owner).setEscrowContract(escrow.address);
+            await tradeManager.connect(owner).setOracleContract(oracle.address);
+            await createTrade(tradeManager, importer, exporter, ethers);
+            await tradeManager.connect(exporter).acceptTrade(0);
+            await tradeManager.connect(escrow).markTradeFunded(0);
+            await tradeManager.connect(oracle).markTradeDisputed(0);
+            await expect(tradeManager.connect(escrow).markTradeRefunded(0))
+            .to.emit(tradeManager, "TradeStatusUpdated")
+            .withArgs(0n,6n, 7n);
+
+            const trade = await tradeManager.getTrade(0);
+            // Refunded = 7
+            expect(trade.status).to.equal(7n);
+        });
+
+        it("Should reject refunding a non disputed trade", async function() {
+            const {tradeManager, owner, importer, exporter, escrow, ethers} = await deployTradeManager();
+            await tradeManager.connect(owner).setEscrowContract(escrow.address);
+            await createTrade(tradeManager, importer, exporter, ethers);
+            await expect(tradeManager.connect(escrow).markTradeRefunded(0))
+            .to.be.revertedWithCustomError(tradeManager,"InvalidTradeState");
+        });
+
+        it("Should reject a non escrow address from refunding a trade", async function() {
+            const {tradeManager, owner, importer, randomUser, exporter, escrow, oracle, ethers} = await deployTradeManager();
+            await tradeManager.connect(owner).setEscrowContract(escrow.address);
+            await tradeManager.connect(owner).setOracleContract(oracle.address);
+            await createTrade(tradeManager, importer, exporter, ethers);
+            await tradeManager.connect(exporter).acceptTrade(0);
+            await tradeManager.connect(escrow).markTradeFunded(0);
+            await tradeManager.connect(oracle).markTradeDisputed(0);
+            await expect(tradeManager.connect(randomUser).markTradeRefunded(0))
+            .to.be.revertedWithCustomError(tradeManager,"Unauthorized");
+        });
+
+        it("Should reject any transition from Refunded", async function() {
+            const {tradeManager, owner, importer, exporter, escrow, oracle, ethers} = await deployTradeManager();
+            await tradeManager.connect(owner).setEscrowContract(escrow.address);
+            await tradeManager.connect(owner).setOracleContract(oracle.address);
+            await createTrade(tradeManager, importer, exporter, ethers);
+            await tradeManager.connect(exporter).acceptTrade(0);
+            await tradeManager.connect(escrow).markTradeFunded(0);
+            await tradeManager.connect(oracle).markTradeDisputed(0);
+            await tradeManager.connect(escrow).markTradeRefunded(0);
+            const refundedTrade = await tradeManager.getTrade(0);
+            expect(refundedTrade.status).to.equal(7n);
+            await expect(tradeManager.connect(escrow).markTradeCompleted(0))
+            .to.be.revertedWithCustomError(tradeManager, "InvalidTradeState");
+        });
+
+        it("Should reject any transition from Completed", async function() {
+            const {tradeManager, owner, importer, exporter, escrow, oracle, ethers} = await deployTradeManager();
+            await tradeManager.connect(owner).setEscrowContract(escrow.address);
+            await tradeManager.connect(owner).setOracleContract(oracle.address);
+            await createTrade(tradeManager, importer, exporter, ethers);
+            await tradeManager.connect(exporter).acceptTrade(0);
+            await tradeManager.connect(escrow).markTradeFunded(0);
+            await tradeManager.connect(oracle).markTradeShipped(0);
+            await tradeManager.connect(escrow).markTradeCompleted(0);
+            const completedTrade = await tradeManager.getTrade(0);
+            expect(completedTrade.status).to.equal(4n);
+            await expect(tradeManager.connect(escrow).markTradeCompleted(0))
+            .to.be.revertedWithCustomError(tradeManager,"InvalidTradeState");
+        });
+
+        it("Should reject any transistion from Cancelled", async function() {
+            const {tradeManager, owner, importer, exporter, escrow, ethers} = await deployTradeManager();
+            await tradeManager.connect(owner).setEscrowContract(escrow.address);
+            await createTrade(tradeManager, importer, exporter, ethers);
+            await tradeManager.connect(importer).cancelTrade(0);
+            const cancelledTrade = await tradeManager.getTrade(0);
+            expect(cancelledTrade.status).to.equal(5n);
+            await expect(tradeManager.connect(escrow).markTradeFunded(0))
+            .to.be.revertedWithCustomError(tradeManager,"InvalidTradeState");
         });
     });
 });

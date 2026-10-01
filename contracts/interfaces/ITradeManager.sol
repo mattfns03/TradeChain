@@ -10,7 +10,8 @@ interface ITradeManager {
         Shipped,
         Completed,
         Cancelled,
-        Disputed
+        Disputed,
+        Refunded
     }
 
     struct Trade {
