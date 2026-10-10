@@ -26,4 +26,10 @@ interface ITradeManager {
     }
 
     function getTrade(uint256 tradeId) external view returns(Trade memory);
+
+    function markTradeFunded(uint256 tradeId) external;
+
+    function markTradeCompleted(uint256 tradeId) external;
+
+    function markTradeRefunded(uint256 tradeId) external;
 }
