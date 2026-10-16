@@ -1,0 +1,1 @@
+"""TradeChain backend application package."""

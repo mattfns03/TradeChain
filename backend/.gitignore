@@ -1,0 +1,22 @@
+# Python environments
+.venv/
+venv/
+
+# Secrets and local configuration
+.env
+
+# Local encrypted uploads
+.local_storage/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
