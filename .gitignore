@@ -23,3 +23,7 @@ cache/
 
 # Logs
 *.log
+
+# generated local address
+contracts/deployments/localhost.json
+accounts.txt
